@@ -6,6 +6,21 @@ from flask_dance.consumer.storage.session import BaseStorage
 from dotenv import load_dotenv
 load_dotenv()
 import os
+import stripe
+import json
+
+
+stripe.api_key = ''
+
+#THIS INSURES NO TAMPERING OF PRICES
+#SINCE THIS IS IN THE BACKEND IT SHOULD BE SAFE
+PRODUCT_CATALOG = {
+    1: {'name': 'Bully Booster 1', 'price': 500},
+    2: {'name': 'Bully Booster 2', 'price': 500},
+    3: {'name': 'Bully Booster 3', 'price': 500},
+    4: {'name': 'Bully Booster 4', 'price': 500},
+    # Add more products as needed
+}
 
 class SessionStorage(BaseStorage):
     def __init__(self, session_key="flask_dance_token"):
@@ -39,6 +54,10 @@ github_blueprint = make_github_blueprint(
     storage=SessionStorage()
 )
 content.register_blueprint(github_blueprint, url_prefix='/github_login')
+
+@content.route('/content/success')
+def success():
+  return render_template('success.html')
 
 @content.route('/content/block1')
 def block1():
@@ -132,7 +151,38 @@ def create_post_route():
     except Exception as e:
         print(f"Error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+    
+@content.route('/create-checkout-session', methods=['POST'])
+def create_checkout_session():
+    cart_json = request.form.get('cart')
+    cart = json.loads(cart_json)
 
+    line_items = []
+
+    for item in cart:
+        product = PRODUCT_CATALOG.get(item['id'])
+        if product:
+            line_items.append({
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {
+                        'name': product['name'],
+                    },
+                    'unit_amount': product['price'],
+                },
+                'quantity': item['quantity'],
+            })
+
+    if not line_items:
+        return "Invalid cart", 400
+
+    session = stripe.checkout.Session.create(
+        line_items=line_items,
+        mode='payment',
+        success_url='http://localhost:5000/success?session_id={CHECKOUT_SESSION_ID}',
+        cancel_url='http://localhost:5000/',
+    )
+    return redirect(session.url, code=303)
 # @content.route('/github_login')
 # def github_login():
 #     if not github.authorized:
@@ -261,3 +311,4 @@ def logout():
 @content.route('/')
 def index():
     return render_template('index.html')
+
