@@ -28,7 +28,7 @@ def create_app():
         MAIL_USE_TLS=True,
         MAIL_USE_SSL=False,
         MAIL_USERNAME='noreply.catronrobotics@gmail.com',
-        MAIL_PASSWORD='uetdshtqplafynso',
+        MAIL_PASSWORD='',
         MAIL_DEFAULT_SENDER='noreply.catronrobotics@gmail.com'
     )
 

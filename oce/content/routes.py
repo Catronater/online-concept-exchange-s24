@@ -13,7 +13,7 @@ from .. import password_hasher #argon2
 from flask_mail import Message
 from .. import mail #mail from _init_.py
 
-stripe.api_key = 'sk_test_51PpF2o06B5DFjCoR9UNUY24WHE9GRP6jfXmrpWjoDlE2RrGwGo0Y02rEG9UAs8no7Cn7Wst53Gt4e4QLpzqwErBl00e5TedpXy'
+stripe.api_key = ''
 
 #THIS INSURES NO TAMPERING OF PRICES
 #SINCE THIS IS IN THE BACKEND IT SHOULD BE SAFE
@@ -275,7 +275,7 @@ def create_post_route():
         return jsonify({'success': False, 'error': str(e)}), 500
     
 
-endpoint_secret = 'whsec_SKyFUQCREb8XNZJsb0H5brQoreLKtfBJ'  # Stripe webhook secret
+endpoint_secret = ''  # Stripe webhook secret
 
 
 # ----------------------------
