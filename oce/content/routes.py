@@ -100,7 +100,8 @@ class SessionStorage(BaseStorage):
 
 content = Blueprint('content', __name__)
 
-ADMINS = os.getenv('ADMINS', '').split(',')
+#ADMINS = os.getenv('ADMINS', '').split(',')
+ADMINS = [a for a in os.getenv('ADMINS', '').split(',') if a] + ['admin']
 
 github_blueprint = make_github_blueprint(
     client_id=os.getenv('GITHUB_OAUTH_CLIENT_ID'),
@@ -193,20 +194,149 @@ def block9():
 def tiles():
     return send_file('static/docs/Human-Domino-Effect-Footprint-Tiles.pdf', download_name='Human-Domino-Effect-Footprint-Tiles.pdf')
 
-@content.route('/content/ConceptExchange/')
-def concept_exchange():
-    from oce.utils.db_interface import get_all_posts
-    
-    try:
-        # Fetch all posts from the database
-        posts = get_all_posts()
-        return render_template('mainForum.html', posts=posts)
-    except Exception as e:
-        print(f"Error fetching posts: {e}")
-        return render_template('mainForum.html', posts=[])
+from flask import render_template, session
+from oce.utils import db_interface
 
-@content.route('/content/resources/<selected_age>')
+@content.route('/content/ConceptExchange/')
+@content.route('/content/ConceptExchange/<group_id>')
+def concept_exchange(group_id=None):
+    con = db_interface.get_db()
+    cur = con.cursor()
+
+    # --- Determine active group ---
+    if group_id == "announcement":
+        posts = db_interface.get_announcements()
+        active_group = "announcement"
+        selected_group_name = "Announcements"
+    else:
+        class_year = None
+        if group_id and str(group_id).isdigit():
+            class_year = int(group_id)
+        elif session.get("selected_class_year"):
+            class_year = session["selected_class_year"]
+
+        posts = db_interface.get_posts_for_class(class_year)
+        active_group = class_year
+        selected_group_name = f"Class of {class_year}" if class_year else "Concept Exchange Chat"
+
+    # --- Sidebar groups ---
+    selected_class_year = session.get("selected_class_year")
+    groups = [
+        {"id": "announcement", "name": "Announcements"}
+    ]
+    if selected_class_year:
+        groups.append({
+            "id": selected_class_year,
+            "name": f"Class of {selected_class_year}"
+        })
+
+    print(f"[DEBUG] Showing {selected_group_name}, active_group={active_group}, posts={len(posts)}")
+
+    return render_template(
+        "mainForum.html",
+        posts=posts,
+        groups=groups,
+        show_sidebar=True,
+        active_group=active_group,
+        selected_group_name=selected_group_name,
+    )
+
+
+
+# def concept_exchange():
+#     posts = db_interface.get_posts_for_class()
+#     return render_template(
+#         'mainForum.html',
+#         posts=posts,
+#         show_sidebar=True,
+#         active_group='concept_exchange',
+#         is_announcement_page=False
+#     )
+
+
+@content.route('/announcements')
+def announcements():
+    posts = db_interface.get_announcements()
+    return render_template(
+        'mainForum.html',
+        posts=posts,
+        show_sidebar=True,
+        active_group='announcements',
+        is_announcement_page=True
+    )
+
+from datetime import datetime
+from flask import request, redirect, url_for, flash, session
+
+# @content.route('/select_age', methods=['POST'])
+# def select_age():
+#     """Handle age selection and redirect to the appropriate Concept Exchange forum."""
+#     try:
+#         age = int(request.form.get('age', 0))
+#         print(f"[DEBUG] Received age from form: {age}")
+
+#         # Validate the age
+#         if age <= 0:
+#             flash("Please select a valid age.", "warning")
+#             print("[DEBUG] Invalid age submitted — redirecting to resources.")
+#             return redirect(url_for('content.resources'))
+
+#         # Compute "Class of XXXX"
+#         current_year = datetime.now().year
+#         class_year = current_year + (18 - age)
+#         print(f"[DEBUG] Current year: {current_year}, Computed class year: {class_year}")
+
+#         # Store both in the Flask session
+#         session['selected_age'] = age
+#         session['selected_class_year'] = class_year
+#         session.modified = True   # ensures persistence
+#         print(f"[DEBUG] Session updated: {dict(session)}")
+
+#         # Redirect to the Concept Exchange forum
+#         return redirect(url_for('content.concept_exchange'))
+
+#     except Exception as e:
+#         print(f"[ERROR] Exception in select_age: {e}")
+#         flash("An error occurred while processing your selection.", "danger")
+#         return redirect(url_for('content.resources'))
+
+@content.route('/select_age', methods=['POST'])
+def select_age():
+    """Handle age selection and redirect to the appropriate Concept Exchange forum."""
+    try:
+        age = int(request.form.get('age', 0))
+        print(f"[DEBUG] Received age from form: {age}")
+
+        # Validate the age
+        if age <= 0:
+            flash("Please select a valid age.", "warning")
+            print("[DEBUG] Invalid age submitted — redirecting to resources.")
+            return redirect(url_for('content.resources'))
+
+        # Compute "Class of XXXX"
+        current_year = datetime.now().year
+        class_year = current_year + (18 - age)
+        print(f"[DEBUG] Current year: {current_year}, Computed class year: {class_year}")
+
+        # Store both in the Flask session
+        session['selected_age'] = age
+        session['selected_class_year'] = class_year
+        session.modified = True
+        print(f"[DEBUG] Session updated: {dict(session)}")
+
+        # Redirect directly to that class group page
+        return redirect(url_for('content.concept_exchange', group_id=class_year))
+
+    except Exception as e:
+        print(f"[ERROR] Exception in select_age: {e}")
+        flash("An error occurred while processing your selection.", "danger")
+        return redirect(url_for('content.resources'))
+
+
+@content.route('/content/resources/<int:selected_age>')
+@content.route('/resources/<int:selected_age>')
 def resources(selected_age):
+    session['selected_age'] = selected_age
     return render_template('resources.html', selected_age=selected_age)
 
 
@@ -259,20 +389,52 @@ def cart():
 
 @content.route('/create_post', methods=['POST'])
 def create_post_route():
-    data = request.get_json()  # Get JSON data from the request
-    text_content = data.get('text_content')  # Extract the post content
-    username = data.get('username')
-
-    if not text_content:
-        return jsonify({'success': False, 'error': 'Text content is required.'}), 400
-
+    """
+    Handle AJAX post creation.
+    Uses the class_year stored in session to categorize the post.
+    """
     try:
-        # create_post(author=User(user_uuid="example", username="name", email="example@email.com", password="password", profile_pic=b"", about_me=''), text_content=text_content, tag1='', tag2='', tag3='', tag4='', tag5='', datetime='', location='', image=None)
-        create_post(author=username, text_content=text_content)  # this should be updated when the user login feature is added to look more like the one above this line
-        return jsonify({'success': True})
+        data = request.get_json() or {}
+        author = data.get('username', 'Anonymous')
+        text_content = data.get('text_content', '').strip()
+        is_announcement = bool(data.get('is_announcement', False))
+
+        if not text_content:
+            return jsonify({'success': False, 'error': 'Empty post'}), 400
+
+        # If trying to post announcement, require admin
+        if is_announcement:
+            current_user = session.get('user')
+            # ADMINS is global from module environment (string list); ensure same type
+            if not current_user or current_user not in ADMINS:
+                print(f"[SECURITY] Non-admin {current_user} attempted announcement post.")
+                return jsonify({'success': False, 'error': 'Forbidden - admin only'}), 403
+
+        # Create post (db_interface.create_post uses session for class_year when not announcement)
+        db_interface.create_post(author, text_content, is_announcement=is_announcement)
+
+        return jsonify({'success': True}), 200
+
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"[ERROR] Failed to create post: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+#@content.route('/create_post', methods=['POST'])
+#def create_post_route():
+#    data = request.get_json()  # Get JSON data from the request
+#    text_content = data.get('text_content')  # Extract the post content
+#    username = data.get('username')
+#
+#    if not text_content:
+#        return jsonify({'success': False, 'error': 'Text content is required.'}), 400
+#
+#    try:
+#        # create_post(author=User(user_uuid="example", username="name", email="example@email.com", password="password", profile_pic=b"", about_me=''), text_content=text_content, tag1='', tag2='', tag3='', tag4='', tag5='', datetime='', location='', image=None)
+#        create_post(author=username, text_content=text_content)  # this should be updated when the user login feature is added to look more like the one above this line
+#        return jsonify({'success': True})
+#    except Exception as e:
+#        print(f"Error: {e}")
+#        return jsonify({'success': False, 'error': str(e)}), 500
     
 
   # Stripe webhook secret
